@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 )
 
 type Server struct {
@@ -38,6 +39,9 @@ func (this *Server) Handler(conn net.Conn) {
 
 	user.Online()
 
+	//监听用户是否活跃的channel
+	isLive := make(chan bool)
+
 	go func() {
 		buf := make([]byte, 4096)
 		for {
@@ -52,12 +56,34 @@ func (this *Server) Handler(conn net.Conn) {
 				return
 			}
 
+			//去除"\n"
 			msg := string(buf[:n-1])
 
+			//处理用户的消息
 			user.DoMessage(msg)
 
+			//代表当前用户是一个活跃的
+			isLive <- true
 		}
 	}()
+
+	for {
+		select {
+		case <-isLive:
+			//用户活跃情况，重置定时器
+		case <-time.After(time.Minute * 10):
+			user.SendMsg("你已被强制下线")
+
+			//销毁当前用户的资源
+			close(user.C)
+
+			//关闭连接
+			conn.Close()
+
+			//退出当前Handler
+			return
+		}
+	}
 }
 
 // ListenMessager 监听Message广播消息channel的goroutine,一旦有消息就发送给全部的在线User
