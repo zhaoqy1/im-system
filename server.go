@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"sync"
 )
@@ -33,15 +34,30 @@ func NewServer(ip string, port int) *Server {
 func (this *Server) Handler(conn net.Conn) {
 	//fmt.Println("链接建立成功")
 
-	user := NewUser(conn)
-	//用户上线，将用户加入到onlineMap
-	this.mapLock.Lock()
-	this.OnlineMap[user.Name] = user
-	this.mapLock.Unlock()
-	//广播当前用户上线消息
-	this.BroadCast(user, "已上线")
+	user := NewUser(conn, this)
 
-	//select {}
+	user.Online()
+
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := conn.Read(buf)
+			if n == 0 {
+				user.Offline()
+				return
+			}
+
+			if err != nil && err != io.EOF {
+				fmt.Println("Conn Read err:", err)
+				return
+			}
+
+			msg := string(buf[:n-1])
+
+			user.DoMessage(msg)
+
+		}
+	}()
 }
 
 // ListenMessager 监听Message广播消息channel的goroutine,一旦有消息就发送给全部的在线User
